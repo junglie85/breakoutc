@@ -1,20 +1,21 @@
+#include "breakout.h"
+#include "math.c"
+#include "input.c"
+#include "software_renderer.c"
+#include "breakout.c"
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
-#include <stdbool.h>
-#include <stdint.h>
-
-#define UNUSED(X) ((void)(X))
-
-struct win32_render_buffer {
+typedef struct win32_render_buffer {
     uint32_t width;
     uint32_t height;
     uint32_t *memory;
     BITMAPINFO info;
-};
+} win32_render_buffer_t;
 
 static bool global_running;
-static struct win32_render_buffer global_render_buffer;
+static win32_render_buffer_t global_render_buffer;
 
 static LRESULT win32_window_procedure(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
 {
@@ -59,16 +60,6 @@ static LRESULT win32_window_procedure(HWND window, UINT message, WPARAM w_param,
     return result;
 }
 
-static void clear_screen(struct win32_render_buffer *render_buffer, uint32_t color)
-{
-    uint32_t *pixel = render_buffer->memory;
-    for (uint32_t y = 0; y < render_buffer->height; ++y) {
-        for (uint32_t x = 0; x < render_buffer->width; ++x) {
-            *pixel++ = color;
-        }
-    }
-}
-
 int WinMain(HINSTANCE instance, HINSTANCE previous_instance, LPSTR cmdline, int showcmd)
 {
     UNUSED(previous_instance);
@@ -106,17 +97,63 @@ int WinMain(HINSTANCE instance, HINSTANCE previous_instance, LPSTR cmdline, int 
 
     HDC device_context = GetDC(window);
 
+    input_t input = { 0 };
+
+    LARGE_INTEGER counter_frequency;
+    QueryPerformanceFrequency(&counter_frequency);
+
+    LARGE_INTEGER last_counter;
+    QueryPerformanceCounter(&last_counter);
+
+    float last_dt = 0.01666f;
+
     global_running = true;
     while (global_running) {
         // Input.
+        for (uint32_t i = 0; i < BUTTON_COUNT; ++i) { input.buttons[i].changed = false; }
+
         MSG message;
         while (PeekMessageW(&message, window, 0, 0, PM_REMOVE)) {
-            TranslateMessage(&message);
-            DispatchMessageW(&message);
+
+            switch (message.message) {
+            case WM_SYSKEYDOWN:
+            case WM_SYSKEYUP:
+            case WM_KEYDOWN:
+            case WM_KEYUP: {
+                uint32_t vk_code = (uint32_t)message.wParam;
+                bool was_down = (message.lParam & (1 << 30)) != 0;
+                bool is_down = (message.lParam & (1 << 31)) == 0;
+
+#define PROCESS_BUTTON(vk, button)                           \
+    if (vk_code == vk) {                                     \
+        input.buttons[button].changed = is_down != was_down; \
+        input.buttons[button].is_down = is_down;             \
+    }
+
+                PROCESS_BUTTON(VK_LEFT, BUTTON_LEFT)
+                PROCESS_BUTTON(VK_RIGHT, BUTTON_RIGHT)
+                PROCESS_BUTTON(VK_UP, BUTTON_UP)
+                PROCESS_BUTTON(VK_DOWN, BUTTON_DOWN)
+
+#undef PROCESS_BUTTON
+
+                break;
+            }
+
+            default: {
+                TranslateMessage(&message);
+                DispatchMessageW(&message);
+            }
+            }
         }
 
         // Update.
-        clear_screen(&global_render_buffer, 0x00ff4400);
+        render_buffer_t render_buffer = { 0 };
+        render_buffer.width = global_render_buffer.width;
+        render_buffer.height = global_render_buffer.height;
+        render_buffer.pixels = global_render_buffer.memory;
+
+        game_update(&render_buffer, &input, last_dt);
 
         // Render.
         StretchDIBits(device_context,
@@ -126,6 +163,12 @@ int WinMain(HINSTANCE instance, HINSTANCE previous_instance, LPSTR cmdline, int 
             &global_render_buffer.info,
             DIB_RGB_COLORS,
             SRCCOPY);
+
+        LARGE_INTEGER current_counter;
+        QueryPerformanceCounter(&current_counter);
+        last_dt = (float)(current_counter.QuadPart - last_counter.QuadPart) / (float)counter_frequency.QuadPart;
+
+        last_counter = current_counter;
     }
 
     return 0;
