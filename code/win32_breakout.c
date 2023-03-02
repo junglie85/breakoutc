@@ -1,8 +1,8 @@
-#include "breakout.h"
+#include "utils.c"
 #include "math.c"
-#include "input.c"
+#include "platform_common.c"
 #include "software_renderer.c"
-#include "breakout.c"
+#include "game.c"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -30,7 +30,7 @@ static LRESULT win32_window_procedure(HWND window, UINT message, WPARAM w_param,
 
     case WM_SIZE: {
         RECT rect;
-        GetWindowRect(window, &rect);
+        GetClientRect(window, &rect);
         global_render_buffer.width = rect.right - rect.left;
         global_render_buffer.height = rect.bottom - rect.top;
 
@@ -146,6 +146,12 @@ int WinMain(HINSTANCE instance, HINSTANCE previous_instance, LPSTR cmdline, int 
             }
             }
         }
+
+        POINT mouse_pointer;
+        GetCursorPos(&mouse_pointer);
+        ScreenToClient(window, &mouse_pointer);
+        input.mouse.x = mouse_pointer.x;
+        input.mouse.y = global_render_buffer.height - mouse_pointer.y;
 
         // Update.
         render_buffer_t render_buffer = { 0 };
